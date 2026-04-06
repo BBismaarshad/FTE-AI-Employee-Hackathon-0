@@ -1,22 +1,44 @@
 # AI Employee - Python Dependencies
 
+# ========================================
 # Core (Bronze tier)
+# ========================================
 # No external dependencies required for basic filesystem watcher
 # Python 3.13+ standard library is sufficient
 
-# Silver tier+ (uncomment as needed)
-# google-api-python-client>=2.100.0   # Gmail API
-# google-auth-httplib2>=0.1.0          # Gmail authentication
-# google-auth-oauthlib>=1.0.0          # Gmail OAuth
+# ========================================
+# Silver Tier Requirements
+# ========================================
 
-# WhatsApp (Playwright-based)
-# playwright>=1.40.0                   # WhatsApp Web automation
+# Gmail Watcher & Email MCP Server
+google-api-python-client>=2.100.0   # Gmail API
+google-auth-httplib2>=0.1.0          # Gmail authentication
+google-auth-oauthlib>=1.0.0          # Gmail OAuth
+
+# WhatsApp Watcher (Playwright-based)
+playwright>=1.40.0                   # WhatsApp Web automation
+# Run after install: playwright install chromium
 
 # Filesystem watching (alternative to polling)
-# watchdog>=3.0.0                      # File system event monitoring
+watchdog>=3.0.0                      # File system event monitoring
 
-# Future tiers (uncomment as needed)
+# MCP Server Framework
+mcp>=0.9.0                           # Model Context Protocol server
+
+# ========================================
+# Gold Tier+ (uncomment as needed)
+# ========================================
 # requests>=2.31.0                     # HTTP requests for API calls
 # python-dotenv>=1.0.0                 # Environment variable loading
 # schedule>=1.2.0                      # Task scheduling
 # pyyaml>=6.0                          # YAML parsing for frontmatter
+# odoo-rpc>=2.0.0                      # Odoo ERP integration
+# tweepy>=4.14.0                       # Twitter/X API
+# facebook-business>=17.0.0            # Facebook/Instagram API
+# linkedin-api>=2.0.0                  # LinkedIn API (unofficial)
+
+# ========================================
+# Install Command
+# ========================================
+# pip install -r requirements.txt
+# playwright install chromium  # Required after pip install

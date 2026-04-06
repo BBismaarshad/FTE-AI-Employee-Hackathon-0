@@ -1,0 +1,25 @@
+{
+  "name": "fte-ai-employee-hackathon-0",
+  "version": "1.0.0",
+  "description": "> **Your life and business on autopilot. Local-first, agent-driven, human-in-the-loop.**",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BBismaarshad/FTE-AI-Employee-Hackathon-0.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/BBismaarshad/FTE-AI-Employee-Hackathon-0/issues"
+  },
+  "homepage": "https://github.com/BBismaarshad/FTE-AI-Employee-Hackathon-0#readme",
+  "dependencies": {
+    "@playwright/browser-chromium": "^1.59.1",
+    "@playwright/test": "^1.59.1"
+  }
+}

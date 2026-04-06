@@ -5,6 +5,55 @@
       "source": "bilalmk/todo_correct",
       "sourceType": "github",
       "computedHash": "f73daf75e38650c202e61f652a26578db157f8423e8bcf283bcd93b441641461"
+    },
+    "gmail-watcher": {
+      "source": "local",
+      "sourceType": "local",
+      "tier": "silver",
+      "description": "Monitor Gmail for unread emails and create action files",
+      "path": ".qwen/skills/gmail-watcher"
+    },
+    "whatsapp-watcher": {
+      "source": "local",
+      "sourceType": "local",
+      "tier": "silver",
+      "description": "Monitor WhatsApp Web for keyword messages and create action files",
+      "path": ".qwen/skills/whatsapp-watcher"
+    },
+    "linkedin-auto-poster": {
+      "source": "local",
+      "sourceType": "local",
+      "tier": "silver",
+      "description": "Generate and post business content to LinkedIn automatically",
+      "path": ".qwen/skills/linkedin-auto-poster"
+    },
+    "plan-generator": {
+      "source": "local",
+      "sourceType": "local",
+      "tier": "silver",
+      "description": "Create structured Plan.md files with multi-step execution plans",
+      "path": ".qwen/skills/plan-generator"
+    },
+    "email-mcp-server": {
+      "source": "local",
+      "sourceType": "local",
+      "tier": "silver",
+      "description": "Send emails via MCP server with approval workflow",
+      "path": ".qwen/skills/email-mcp-server"
+    },
+    "hitl-approval-workflow": {
+      "source": "local",
+      "sourceType": "local",
+      "tier": "silver",
+      "description": "Human-in-the-loop approval system for sensitive actions",
+      "path": ".qwen/skills/hitl-approval-workflow"
+    },
+    "windows-task-scheduler": {
+      "source": "local",
+      "sourceType": "local",
+      "tier": "silver",
+      "description": "Schedule AI Employee tasks using Windows Task Scheduler",
+      "path": ".qwen/skills/windows-task-scheduler"
     }
   }
 }
