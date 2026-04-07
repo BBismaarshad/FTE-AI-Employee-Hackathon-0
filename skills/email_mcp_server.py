@@ -1,5 +1,5 @@
 """
-Email MCP Server - MCP server for sending emails via Gmail API.
+Gmail MCP Server - MCP server for sending emails via Gmail API.
 
 This MCP server provides tools for:
 - Sending emails
@@ -8,7 +8,7 @@ This MCP server provides tools for:
 - Rate limiting and audit logging
 
 Usage:
-    python skills/email_mcp_server.py --credentials /path/to/credentials.json
+    python skills/email_mcp_server.py --credentials ./credentials.json
 
 Security:
     - Uses Gmail API with OAuth 2.0
@@ -24,31 +24,30 @@ import time
 import pickle
 import logging
 import argparse
+import re
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Optional
-
-# MCP imports
-try:
-    from mcp.server import Server
-    from mcp.server.stdio import stdio_server
-    from mcp.types import Tool, TextContent
-except ImportError:
-    print('Warning: MCP library not installed. Install with: pip install mcp')
-    print('Running in standalone mode...')
-    Server = None
-
-# Google API imports
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-import base64
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
+import base64
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Google API imports
+try:
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+except ImportError:
+    raise ImportError(
+        'Google API client not installed. Run:\n'
+        '  pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib'
+    )
 
 # Scopes needed
 SCOPES = [
@@ -63,15 +62,22 @@ class EmailMCPServer:
 
     def __init__(self, credentials_path: str, token_path: str = None,
                  dry_run: bool = False, max_per_hour: int = 10,
-                 max_per_day: int = 50, cooldown_seconds: int = 30):
+                 max_per_day: int = 50, cooldown_seconds: int = 30,
+                 vault_path: str = None):
         self.credentials_path = Path(credentials_path)
         self.token_path = Path(token_path) if token_path else \
-            self.credentials_path.parent / 'gmail_token.json'
+            self.credentials_path.parent / 'token.json'
 
         self.dry_run = dry_run
         self.max_per_hour = max_per_hour
         self.max_per_day = max_per_day
         self.cooldown_seconds = cooldown_seconds
+
+        # Vault path for logging
+        self.vault_path = Path(vault_path) if vault_path else \
+            self.credentials_path.parent / 'AI_Employee_Vault'
+        self.logs_folder = self.vault_path / 'Logs'
+        self.logs_folder.mkdir(parents=True, exist_ok=True)
 
         # Gmail service
         self.service = None
@@ -91,7 +97,7 @@ class EmailMCPServer:
 
     def _load_send_log(self):
         """Load email send log for rate limiting."""
-        log_file = Path(__file__).parent.parent / 'AI_Employee_Vault' / 'Logs' / 'email_operations.json'
+        log_file = self.logs_folder / 'email_operations.json'
         if log_file.exists():
             try:
                 logs = json.loads(log_file.read_text())
@@ -104,12 +110,11 @@ class EmailMCPServer:
             except (json.JSONDecodeError, ValueError):
                 self.send_log = []
 
-    def _save_send_log(self):
-        """Save send log."""
-        log_file = Path(__file__).parent.parent / 'AI_Employee_Vault' / 'Logs' / 'email_operations.json'
-        log_file.parent.mkdir(parents=True, exist_ok=True)
+    def _save_send_log(self, log_entry: dict):
+        """Append to send log."""
+        log_file = self.logs_folder / 'email_operations.json'
 
-        # Append to existing log
+        # Load existing logs
         existing_logs = []
         if log_file.exists():
             try:
@@ -117,7 +122,7 @@ class EmailMCPServer:
             except json.JSONDecodeError:
                 existing_logs = []
 
-        existing_logs.extend(self.send_log)
+        existing_logs.append(log_entry)
         log_file.write_text(json.dumps(existing_logs, indent=2))
 
     def _authenticate(self):
@@ -129,12 +134,14 @@ class EmailMCPServer:
             try:
                 with open(self.token_path, 'rb') as f:
                     creds = pickle.load(f)
+                self.logger.info('Loaded existing Gmail token')
             except Exception:
                 creds = None
 
         # Refresh or get new credentials
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
+                self.logger.info('Refreshing expired Gmail token...')
                 creds.refresh(Request())
             else:
                 if not self.credentials_path.exists():
@@ -142,58 +149,61 @@ class EmailMCPServer:
                         f'Gmail credentials not found at: {self.credentials_path}'
                     )
 
+                self.logger.info('Opening browser for Gmail authorization...')
                 flow = InstalledAppFlow.from_client_secrets_file(
                     self.credentials_path, SCOPES)
                 creds = flow.run_local_server(port=0)
 
-            with open(self.token_path, 'wb') as f:
-                pickle.dump(creds, f)
+                with open(self.token_path, 'wb') as f:
+                    pickle.dump(creds, f)
+                self.logger.info('Gmail token saved')
 
         self.service = build('gmail', 'v1', credentials=creds)
         self.logger.info('Gmail API authenticated')
 
-    def _check_rate_limit(self) -> bool:
-        """Check if we're within rate limits."""
+    def _check_rate_limit(self) -> tuple:
+        """
+        Check if we're within rate limits.
+
+        Returns:
+            tuple: (allowed: bool, reason: str)
+        """
         now = datetime.now()
 
         # Check cooldown
         if self.last_send_time:
             time_since_last = (now - self.last_send_time).total_seconds()
             if time_since_last < self.cooldown_seconds:
-                self.logger.warning(
-                    f'Rate limit: Cooldown period ({self.cooldown_seconds}s) not elapsed'
-                )
-                return False
+                return False, f'Cooldown period ({self.cooldown_seconds}s) not elapsed'
 
         # Check hourly limit
         one_hour_ago = now - timedelta(hours=1)
         sends_last_hour = sum(
             1 for entry in self.send_log
             if datetime.fromisoformat(entry['timestamp']) > one_hour_ago
-            and entry['action'] == 'send_email'
+            and entry.get('action') == 'send_email'
+            and entry.get('result') == 'success'
         )
 
         if sends_last_hour >= self.max_per_hour:
-            self.logger.warning(f'Rate limit: Hourly limit reached ({sends_last_hour}/{self.max_per_hour})')
-            return False
+            return False, f'Hourly limit reached ({sends_last_hour}/{self.max_per_hour})'
 
         # Check daily limit
         one_day_ago = now - timedelta(hours=24)
         sends_last_day = sum(
             1 for entry in self.send_log
             if datetime.fromisoformat(entry['timestamp']) > one_day_ago
-            and entry['action'] == 'send_email'
+            and entry.get('action') == 'send_email'
+            and entry.get('result') == 'success'
         )
 
         if sends_last_day >= self.max_per_day:
-            self.logger.warning(f'Rate limit: Daily limit reached ({sends_last_day}/{self.max_per_day})')
-            return False
+            return False, f'Daily limit reached ({sends_last_day}/{self.max_per_day})'
 
-        return True
+        return True, 'OK'
 
     def _validate_email(self, email: str) -> bool:
         """Basic email validation."""
-        import re
         pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         return bool(re.match(pattern, email))
 
@@ -246,10 +256,11 @@ class EmailMCPServer:
             }
 
         # Check rate limit
-        if not self._check_rate_limit():
+        allowed, reason = self._check_rate_limit()
+        if not allowed:
             return {
                 'success': False,
-                'error': 'Rate limit exceeded. Please try again later.'
+                'error': f'Rate limit exceeded: {reason}'
             }
 
         # Dry run check
@@ -271,6 +282,8 @@ class EmailMCPServer:
 
             # Update rate limiting
             self.last_send_time = datetime.now()
+
+            # Log the action
             log_entry = {
                 'timestamp': datetime.now().isoformat(),
                 'action': 'send_email',
@@ -280,7 +293,7 @@ class EmailMCPServer:
                 'result': 'success'
             }
             self.send_log.append(log_entry)
-            self._save_send_log()
+            self._save_send_log(log_entry)
 
             self.logger.info(f'Email sent to {to}: {subject}')
             return {
@@ -290,10 +303,11 @@ class EmailMCPServer:
             }
 
         except HttpError as error:
-            self.logger.error(f'Error sending email: {error}')
+            error_msg = str(error)
+            self.logger.error(f'Error sending email: {error_msg}')
             return {
                 'success': False,
-                'error': str(error)
+                'error': error_msg
             }
 
     def create_draft(self, to: str, subject: str, body: str,
@@ -393,10 +407,12 @@ class EmailMCPServer:
 
 def main():
     parser = argparse.ArgumentParser(description='Email MCP Server')
-    parser.add_argument('--credentials', type=str, required=True,
+    parser.add_argument('--credentials', type=str, default='./credentials.json',
                         help='Path to Gmail credentials JSON')
     parser.add_argument('--token', type=str, default=None,
                         help='Path to token file')
+    parser.add_argument('--vault', type=str, default='./AI_Employee_Vault',
+                        help='Path to vault for logging')
     parser.add_argument('--dry-run', action='store_true',
                         help='Don\'t actually send emails')
     parser.add_argument('--max-per-hour', type=int, default=10,
@@ -417,78 +433,59 @@ def main():
         server = EmailMCPServer(
             credentials_path=args.credentials,
             token_path=args.token,
+            vault_path=args.vault,
             dry_run=args.dry_run,
             max_per_hour=args.max_per_hour,
             max_per_day=args.max_per_day,
             cooldown_seconds=args.cooldown
         )
 
-        # If MCP library available, run as MCP server
-        if Server:
-            mcp_server = Server('email-mcp')
+        # Interactive mode
+        print('\n' + '='*60)
+        print('Email MCP Server - Ready to send emails!')
+        print('='*60)
+        print('\nCommands:')
+        print('  send <to> <subject> <body>')
+        print('  draft <to> <subject> <body>')
+        print('  list [limit]')
+        print('  quit')
+        print('\n')
 
-            @mcp_server.tool(name='send_email')
-            def send_email_tool(to: str, subject: str, body: str,
-                              attachment_path: str = None) -> str:
-                """Send an email to a recipient."""
-                result = server.send_email(to, subject, body, attachment_path)
-                return json.dumps(result, indent=2)
-
-            @mcp_server.tool(name='create_draft')
-            def create_draft_tool(to: str, subject: str, body: str,
-                                attachment_path: str = None) -> str:
-                """Create an email draft."""
-                result = server.create_draft(to, subject, body, attachment_path)
-                return json.dumps(result, indent=2)
-
-            @mcp_server.tool(name='list_recent_emails')
-            def list_emails_tool(limit: int = 10, days: int = 7) -> str:
-                """List recently sent emails."""
-                result = server.list_recent_emails(limit, days)
-                return json.dumps(result, indent=2)
-
-            # Run server
-            import asyncio
-            async def run_server():
-                async with stdio_server() as (read_stream, write_stream):
-                    await mcp_server.run(read_stream, write_stream)
-
-            asyncio.run(run_server())
-        else:
-            # Standalone mode - interactive
-            print('Email MCP Server running in standalone mode.')
-            print('Available commands:')
-            print('  send <to> <subject> <body>')
-            print('  draft <to> <subject> <body>')
-            print('  list [limit]')
-            print('  quit')
-
-            while True:
-                try:
-                    cmd = input('\nemail> ').strip()
-                    if cmd == 'quit':
-                        break
-                    elif cmd.startswith('send '):
-                        parts = cmd.split(' ', 3)
-                        if len(parts) >= 4:
-                            result = server.send_email(parts[1], parts[2], parts[3])
-                            print(json.dumps(result, indent=2))
-                    elif cmd.startswith('draft '):
-                        parts = cmd.split(' ', 3)
-                        if len(parts) >= 4:
-                            result = server.create_draft(parts[1], parts[2], parts[3])
-                            print(json.dumps(result, indent=2))
-                    elif cmd.startswith('list'):
-                        parts = cmd.split()
-                        limit = int(parts[1]) if len(parts) > 1 else 10
-                        result = server.list_recent_emails(limit)
-                        print(json.dumps(result, indent=2))
-
-                except KeyboardInterrupt:
+        while True:
+            try:
+                cmd = input('email> ').strip()
+                if cmd == 'quit' or cmd == 'exit':
                     break
-                except Exception as e:
-                    print(f'Error: {e}')
+                elif cmd.startswith('send '):
+                    parts = cmd.split(' ', 3)
+                    if len(parts) >= 4:
+                        result = server.send_email(parts[1], parts[2], parts[3])
+                        print(json.dumps(result, indent=2))
+                    else:
+                        print('Usage: send <to@email.com> <Subject> <Body>')
+                elif cmd.startswith('draft '):
+                    parts = cmd.split(' ', 3)
+                    if len(parts) >= 4:
+                        result = server.create_draft(parts[1], parts[2], parts[3])
+                        print(json.dumps(result, indent=2))
+                    else:
+                        print('Usage: draft <to@email.com> <Subject> <Body>')
+                elif cmd.startswith('list'):
+                    parts = cmd.split()
+                    limit = int(parts[1]) if len(parts) > 1 else 10
+                    result = server.list_recent_emails(limit)
+                    print(json.dumps(result, indent=2))
+                else:
+                    print('Unknown command. Use: send, draft, list, or quit')
 
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                print(f'Error: {e}')
+
+    except FileNotFoundError as e:
+        logging.error(str(e))
+        sys.exit(1)
     except Exception as e:
         logging.error(f'Fatal error: {e}', exc_info=True)
         sys.exit(1)

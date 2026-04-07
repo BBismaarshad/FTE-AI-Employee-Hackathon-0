@@ -1,210 +1,207 @@
 # WhatsApp Watcher Skill
 
-Monitor WhatsApp Web for new messages and create action files for the AI Employee.
+Monitor WhatsApp Web for urgent messages and keyword-based alerts.
 
 ## Overview
 
-This skill provides a WhatsApp Watcher that uses Playwright to monitor WhatsApp Web for new messages containing important keywords. It detects urgent messages and creates structured `.md` action files in the vault's `Needs_Action` folder for the AI Employee to process.
+The WhatsApp Watcher uses Playwright (browser automation) to monitor WhatsApp Web for:
+- Messages containing urgent keywords
+- Unread conversations
+- Important requests requiring attention
 
-## Features
+**Warning**: Automated WhatsApp access may violate WhatsApp's Terms of Service. Use at your own risk. Consider using WhatsApp Business API for production.
 
-- **WhatsApp Web Automation**: Uses Playwright to interact with WhatsApp Web
-- **Keyword Detection**: Monitors for urgent keywords like "urgent", "asap", "invoice", "payment", "help"
-- **Session Persistence**: Saves browser session to avoid re-scanning QR code every time
-- **Unread Message Detection**: Identifies chats with unread messages
-- **Structured Action Files**: Creates well-formatted markdown files with message content
-- **Configurable Keywords**: Customizable keyword list for your business needs
-- **Restart Persistence**: Tracks processed messages to avoid duplicates
+## Setup Instructions
 
-## Prerequisites
+### 1. Install Playwright
 
-1. **Python Dependencies**:
+```bash
+pip install playwright
+playwright install chromium
+```
+
+### 2. First Run - QR Code Scan
+
+The first time you run the WhatsApp Watcher:
+
+1. Run the watcher:
    ```bash
-   pip install playwright
-   playwright install chromium
+   python watchers/whatsapp_watcher.py --vault ./AI_Employee_Vault --once
    ```
 
-2. **WhatsApp Web Access**:
-   - You must be able to access WhatsApp Web
-   - First run will require QR code scanning
-   - Keep browser session saved for persistence
+2. A browser window will open showing a **QR code**
 
-3. **System Requirements**:
-   - Chromium browser (installed via `playwright install chromium`)
-   - Graphical environment (or virtual display for servers)
+3. **Scan the QR code** with your WhatsApp mobile app:
+   - Open WhatsApp on your phone
+   - Go to Settings/Menu > Linked Devices
+   - Tap "Link a Device"
+   - Point your camera at the QR code
 
-## Installation
+4. Your WhatsApp session will be saved for future runs
 
-1. Ensure all prerequisites are installed
-2. Copy `whatsapp_watcher.py` to the `watchers/` directory
-3. First run will open WhatsApp Web for QR code scanning
-4. Session will be cached for future runs
+### 3. Session Persistence
+
+After successful login, the browser session is saved to:
+```
+credentials/whatsapp_session/
+```
+
+You won't need to scan the QR code again unless the session expires.
 
 ## Usage
 
-### Continuous Monitoring
+### Run Once (Testing)
+
 ```bash
-python watchers/whatsapp_watcher.py --vault /path/to/AI_Employee_Vault
+python watchers/whatsapp_watcher.py --vault ./AI_Employee_Vault --once
 ```
 
-### Single Check (for testing/scheduled tasks)
+### Run Continuously
+
 ```bash
-python watchers/whatsapp_watcher.py --vault /path/to/AI_Employee_Vault --once
+python watchers/whatsapp_watcher.py --vault ./AI_Employee_Vault --interval 30
 ```
+
+This checks WhatsApp every 30 seconds.
 
 ### Custom Keywords
+
 ```bash
-python watchers/whatsapp_watcher.py --vault /path/to/AI_Employee_Vault --keywords "urgent invoice payment help"
+python watchers/whatsapp_watcher.py \
+  --vault ./AI_Employee_Vault \
+  --keywords urgent invoice payment deadline ASAP \
+  --once
 ```
 
-### Headless Mode (for servers)
-```bash
-python watchers/whatsapp_watcher.py --vault /path/to/AI_Employee_Vault --headless
-```
+### Command Line Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--vault` | Path to Obsidian vault | Required |
+| `--session-path` | Path to store browser session | `./credentials/whatsapp_session/` |
+| `--keywords` | Keywords to monitor | `urgent asap invoice payment help` |
+| `--interval` | Check interval in seconds | 30 |
+| `--once` | Run once and exit | False |
+| `--headless` | Run browser without UI | False |
+| `--timeout` | Browser timeout in ms | 30000 |
 
 ## How It Works
 
-1. **Browser Launch**: Opens Chromium with persistent user data directory
-2. **WhatsApp Web Navigation**: Navigates to web.whatsapp.com
-3. **Session Check**: Waits for successful login (chat list to load)
-4. **Unread Detection**: Scans chat list for unread messages
-5. **Keyword Matching**: Checks message text against configured keywords
-6. **Action File Creation**: Creates `.md` files in `Needs_Action/` with:
-   - Chat name/contact
-   - Message text preview
-   - Matched keywords
-   - Suggested action checkboxes
-7. **State Persistence**: Saves processed message IDs to `.state/whatsapp_watcher.txt`
+1. **Browser Launch**: Opens Chromium with persistent session
+2. **WhatsApp Web Load**: Navigates to web.whatsapp.com
+3. **Login Check**: Waits for QR scan or uses saved session
+4. **Unread Detection**: Finds chats with unread messages
+5. **Keyword Matching**: Only flags messages with urgent keywords
+6. **Action Files**: Creates `.md` files in `Needs_Action/`
 
-## Action File Format
+## Default Keywords
 
-```markdown
----
-type: whatsapp_message
-from: Contact Name
-chat_id: chat_identifier
-received: 2026-04-06T10:30:00
-priority: high
-matched_keywords: urgent, invoice
-status: pending
----
+- `urgent`
+- `asap`
+- `invoice`
+- `payment`
+- `help`
 
-## WhatsApp Message
+### High Priority Keywords
 
-**From**: Contact Name  
-**Chat**: chat_identifier  
-**Received**: 2026-04-06 10:30:00  
-**Priority**: high
+Messages containing these are marked as **high priority**:
+- `urgent`
+- `asap`
+- `immediately`
+- `emergency`
 
-## Message Preview
-Hey, can you send me the invoice for January? This is urgent.
+## Customization
 
-## Matched Keywords
-- urgent
-- invoice
+### Add Your Own Keywords
 
-## Suggested Actions
-- [ ] Read full message in WhatsApp
-- [ ] Respond to contact
-- [ ] Take requested action
-- [ ] Archive after processing
+Edit `watchers/whatsapp_watcher.py`:
 
----
-*Detected by WhatsApp Watcher at 2026-04-06 10:30:00*
+```python
+self.keywords = ['urgent', 'asap', 'invoice', 'payment', 'help',
+                 'deadline', 'meeting', 'contract', 'review']
 ```
 
-## Security Notes
+### Adjust Check Interval
 
-- **WhatsApp Terms of Service**: Be aware of WhatsApp's automation policies
-- **Session Security**: Session data is stored locally - protect it
-- **Rate Limiting**: Avoid excessive polling to prevent account restrictions
-- **Privacy**: Only monitor business-related contacts and messages
-- **Headless Mode**: Use with caution - may trigger security checks
-
-## Configuration
-
-### Custom Keywords File
-For easier management, you can create a `keywords.txt` file:
-
-```
-urgent
-asap
-invoice
-payment
-help
-deadline
-immediately
-important
-```
-
-Then reference it:
+For less frequent checking:
 ```bash
-python watchers/whatsapp_watcher.py --vault /path/to/vault --keywords-file keywords.txt
+python watchers/whatsapp_watcher.py --vault ./AI_Employee_Vault --interval 60
 ```
-
-### Check Interval
-- **Recommended**: 30-60 seconds for business use
-- **Conservative**: 120-300 seconds to avoid rate limiting
-- Adjust based on your needs and WhatsApp's behavior
 
 ## Troubleshooting
 
-### QR Code Required Every Time
-- Session data may have been deleted
-- Ensure `--session-path` points to a persistent directory
-- Check that the directory has write permissions
+### "QR code detected" message
+- This is normal on first run
+- Scan the QR code with your phone
+- Session will be saved
 
-### WhatsApp Web Not Loading
+### Session expired
+- Run the watcher again
+- You may need to re-scan QR code
+- Sessions typically last 30-90 days
+
+### No messages detected
+- Ensure you have unread messages
+- Check that keywords match your messages
+- Run without `--headless` to see browser
+
+### Browser opens but WhatsApp doesn't load
 - Check internet connection
-- Increase `--timeout` value for slower connections
-- Try running without `--headless` first to debug
+- WhatsApp Web may be temporarily unavailable
+- Try again in a few minutes
 
-### No Messages Detected
-- Verify WhatsApp Web is successfully logged in
-- Check if messages contain your configured keywords
-- Review keyword matching logic (case-insensitive by default)
+### WhatsApp Web keeps logging out
+- Session folder may be corrupted
+- Delete `credentials/whatsapp_session/` and re-scan
+- Avoid using WhatsApp Web on other devices simultaneously
 
-### Playwright Errors
-- Reinstall Chromium: `playwright install chromium`
-- Check Playwright version compatibility
-- Ensure no other process is blocking the browser
+## Security Considerations
+
+### Session Data
+- Browser session contains your WhatsApp cookies
+- **Never** share the `credentials/whatsapp_session/` folder
+- Protect this folder from unauthorized access
+
+### Privacy
+- All message content is saved to action files
+- Ensure your vault is secure
+- Be aware of data retention policies
+
+### Terms of Service
+- WhatsApp Web automation may violate ToS
+- Use at your own risk
+- Consider WhatsApp Business API for production
+
+## Best Practices
+
+### Keyword Selection
+- Keep keywords specific to your needs
+- Avoid too many false positives
+- Update based on actual message patterns
+
+### Checking Frequency
+- 30 seconds: Real-time monitoring
+- 60 seconds: Balanced approach
+- 300 seconds: Casual monitoring
+
+### Action File Management
+- Review action files regularly
+- Move processed files to `Done/`
+- Archive important conversations
 
 ## Integration with Orchestrator
 
-The WhatsApp Watcher works with the main `orchestrator.py`:
-1. Watcher detects messages with keywords
+The WhatsApp Watcher works with the orchestrator:
+
+1. Watcher detects keyword messages
 2. Creates action files in `Needs_Action/`
-3. Orchestrator detects new action files
-4. Orchestrator triggers AI to process them
-5. AI creates plans and suggests responses
-6. Files move to `Done/` after completion
+3. Orchestrator processes and creates plans
+4. Qwen Code suggests responses
+5. Completed actions move to `Done/`
 
-## Advanced Usage
+## Next Steps
 
-### Multiple Keyword Sets
-You can run multiple watchers with different keyword sets:
-```bash
-# Urgent business messages
-python whatsapp_watcher.py --vault /path/to/vault --keywords "urgent invoice payment"
-
-# Customer support
-python whatsapp_watcher.py --vault /path/to/vault --keywords "help support issue bug"
-```
-
-### Message Response Templates
-Create response templates in your vault:
-```
-/Vault/Templates/WhatsApp/
-  - invoice_request.md
-  - payment_confirmation.md
-  - meeting_reminder.md
-```
-
-## Next Steps (Gold Tier Enhancements)
-
-- Full message history retrieval
-- Media/message attachment handling
-- Auto-reply suggestions
-- Contact management and grouping
-- Message sentiment analysis
-- WhatsApp Business API integration (official API)
+- Set up Windows Task Scheduler for automated monitoring
+- Add custom response templates
+- Integrate with email for comprehensive communication monitoring
+- Consider WhatsApp Business API for production use

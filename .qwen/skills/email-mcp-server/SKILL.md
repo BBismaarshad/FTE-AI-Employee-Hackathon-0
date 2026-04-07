@@ -1,311 +1,250 @@
 # Email MCP Server Skill
 
-Send emails and manage email operations via Model Context Protocol (MCP).
+Send emails and create drafts via Gmail API with rate limiting and audit logging.
 
 ## Overview
 
-This skill provides an MCP server that enables your AI Employee to send emails, create drafts, and manage email operations. It integrates with Gmail API and works with the Human-in-the-Loop approval workflow.
+The Email MCP (Model Context Protocol) Server provides the AI Employee with the ability to:
+- **Send emails** via Gmail API
+- **Create drafts** for review
+- **List recent emails** sent
+- **Rate limit** outgoing messages
+- **Audit log** all email operations
+- **Dry-run mode** for testing
 
-## Features
-
-- **Email Sending**: Send emails via Gmail API
-- **Draft Creation**: Create email drafts for review
-- **Template Support**: Use predefined email templates
-- **Attachment Handling**: Attach files from vault
-- **Approval Integration**: Works with HITL workflow
-- **Audit Logging**: All email actions logged
-- **Rate Limiting**: Prevents email spam
-
-## Prerequisites
-
-1. **Python Dependencies**:
-   ```bash
-   pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
-   ```
-
-2. **Gmail API Credentials**:
-   - Same credentials as Gmail Watcher
-   - Requires send scope: `https://www.googleapis.com/auth/gmail.send`
-
-3. **MCP Framework**:
-   ```bash
-   pip install mcp
-   ```
-
-## Installation
-
-1. Ensure all prerequisites are installed
-2. Copy `email_mcp_server.py` to project root
-3. Update credentials path in configuration
-4. Register MCP server in Claude Code config
-
-## Usage
-
-### Standalone Server
-```bash
-python skills/email_mcp_server.py --credentials /path/to/credentials.json
-```
-
-### Via Claude Code MCP Config
-
-Add to your MCP configuration:
-
-```json
-{
-  "mcpServers": {
-    "email": {
-      "command": "python",
-      "args": ["/path/to/email_mcp_server.py"],
-      "env": {
-        "GMAIL_CREDENTIALS": "/path/to/credentials.json"
-      }
-    }
-  }
-}
-```
-
-## MCP Tools Provided
-
-### 1. `send_email`
-Send an email to a recipient.
-
-**Parameters**:
-- `to` (string): Recipient email address
-- `subject` (string): Email subject
-- `body` (string): Email body text
-- `html` (string, optional): HTML version of email
-- `attachment_path` (string, optional): Path to file attachment
-
-**Example**:
-```python
-# Tool call
-{
-  "name": "send_email",
-  "arguments": {
-    "to": "client@example.com",
-    "subject": "Invoice #1234 - January 2026",
-    "body": "Dear Client,\n\nPlease find attached your invoice for January 2026.\n\nBest regards,\nYour Company",
-    "attachment_path": "/path/to/invoice.pdf"
-  }
-}
-
-# Response
-{
-  "success": true,
-  "message_id": "msg_abc123",
-  "sent_at": "2026-04-06T10:30:00Z"
-}
-```
-
-### 2. `create_draft`
-Create an email draft for review (doesn't send).
-
-**Parameters**:
-- `to` (string): Recipient email address
-- `subject` (string): Email subject
-- `body` (string): Email body text
-- `attachment_path` (string, optional): Path to attachment
-
-**Example**:
-```python
-# Response
-{
-  "success": true,
-  "draft_id": "draft_xyz789",
-  "message": "Draft created successfully"
-}
-```
-
-### 3. `list_recent_emails`
-List recently sent emails (for context).
-
-**Parameters**:
-- `limit` (int, default=10): Number of emails to return
-- `days` (int, default=7): Look back this many days
-
-**Example**:
-```python
-# Response
-{
-  "emails": [
-    {
-      "to": "client@example.com",
-      "subject": "Invoice #1234",
-      "sent_at": "2026-04-05T14:20:00Z"
-    }
-  ]
-}
-```
-
-### 4. `validate_email`
-Validate an email address format.
-
-**Parameters**:
-- `email` (string): Email address to validate
-
-**Example**:
-```python
-# Response
-{
-  "valid": true,
-  "email": "client@example.com"
-}
-```
+This is one of the "hands" of your AI Employee - it can take action by sending emails.
 
 ## Security Features
 
-### 1. Approval Required
-For sensitive emails, use the approval workflow:
-- New recipients require approval
-- Bulk sends require approval
-- Emails with attachments over threshold need review
+### Rate Limiting
+- **Cooldown period**: 30 seconds between emails (configurable)
+- **Hourly limit**: 10 emails per hour (configurable)
+- **Daily limit**: 50 emails per day (configurable)
 
-### 2. Rate Limiting
-Prevents accidental spam:
-- Max 10 emails per hour (configurable)
-- Max 50 emails per day
-- Cooldown between sends (30 seconds)
+### Dry-Run Mode
+Test the email workflow without actually sending messages.
 
-### 3. Dry Run Mode
-Test email operations without sending:
+### Audit Logging
+All email operations are logged with timestamps for compliance.
+
+### Approval Workflow
+Sensitive emails should go through the human-in-the-loop approval system.
+
+## Setup Instructions
+
+### 1. Gmail API Credentials
+
+The Email MCP Server uses the same credentials as the Gmail Watcher:
+
+1. Ensure `credentials.json` is in the project root
+2. The token file will be auto-created on first run
+3. Gmail API scopes needed:
+   - `gmail.send`
+   - `gmail.compose`
+   - `gmail.readonly`
+
+### 2. First Run Authentication
+
 ```bash
-export DRY_RUN=true
+python skills/email_mcp_server.py --credentials ./credentials/gmail_credentials.json
 ```
 
-### 4. Allowlist/Blocklist
-Configure allowed recipients:
-```json
-{
-  "allowlist": ["trusted@example.com", "partner@company.com"],
-  "blocklist": ["spam@bad.com"]
-}
+This will:
+- Open a browser for OAuth
+- Request permission to send emails
+- Save token for future use
+
+## Usage
+
+### Interactive Mode
+
+```bash
+python skills/email_mcp_server.py --credentials ./credentials/gmail_credentials.json
 ```
 
-## Approval Workflow Integration
+Available commands:
+```
+send <to@email.com> <Subject> <Body>
+draft <to@email.com> <Subject> <Body>
+list [limit]
+quit
+```
 
-When email sending requires approval:
+### Dry-Run Mode (Testing)
 
-1. **AI Detects Sensitive Action**: New recipient, large attachment, etc.
-2. **Creates Approval File**: In `/Pending_Approval/`
-3. **Human Reviews**: Checks email content and details
-4. **Approves**: Moves file to `/Approved/`
-5. **MCP Sends Email**: Orchestrator triggers actual send
-6. **Logs Result**: Email send logged with approval status
+```bash
+python skills/email_mcp_server.py --credentials ./credentials/gmail_credentials.json --dry-run
+```
 
-### Approval File Format
+This logs what would be sent without actually sending.
+
+### Command Line Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--credentials` | Path to Gmail credentials | `./credentials.json` |
+| `--token` | Path to token file | Auto-detected |
+| `--vault` | Path to vault for logging | `./AI_Employee_Vault` |
+| `--dry-run` | Don't actually send emails | False |
+| `--max-per-hour` | Max emails per hour | 10 |
+| `--max-per-day` | Max emails per day | 50 |
+| `--cooldown` | Cooldown between sends (seconds) | 30 |
+
+## Integration with AI Employee
+
+### Approval Workflow
+
+When the AI Employee needs to send an email:
+
+1. **AI creates draft** in `Pending_Approval/Email/`
+2. **Human reviews** the draft
+3. **Human approves** by moving to `Approved/Email/`
+4. **Orchestrator sends** via Email MCP Server
+5. **Email logged** and action moved to `Done/`
+
+### Example Approval File
 
 ```markdown
 ---
 type: approval_request
 action: send_email
 to: client@example.com
-subject: Invoice #1234 - January 2026
-attachment: /Vault/Invoices/2026-04_Client.pdf
-created: 2026-04-06T10:30:00Z
+subject: Project Update - April 2026
+created: 2026-04-06T10:30:00
 status: pending
 ---
 
 # Email Approval Required
 
-## Details
-- **To**: client@example.com
-- **Subject**: Invoice #1234 - January 2026
-- **Attachment**: 2026-04_Client.pdf (245 KB)
-- **Body Preview**: "Dear Client, Please find attached your invoice..."
+## Recipient
+client@example.com
 
-## To Approve
-Move this file to `/Approved/` folder.
+## Subject
+Project Update - April 2026
 
-## To Reject
-Move this file to `/Rejected/` folder.
+## Body
+Dear Client,
+
+I'm writing to provide an update on our project...
+
+[Full email content]
 
 ---
-*Email sending requires human approval*
+Move this file to Approved/ to send, or Rejected/ to cancel.
 ```
 
-## Error Handling
+## Rate Limiting Details
 
-| Error | Cause | Recovery |
-|-------|-------|----------|
-| Auth Failed | Credentials expired | Re-authenticate |
-| Rate Limited | Too many sends | Wait for cooldown |
-| Invalid Recipient | Bad email format | Fix and retry |
-| Attachment Not Found | File path wrong | Verify path |
-| Quota Exceeded | Gmail API limit | Wait or increase quota |
+### Why Rate Limits?
+- Prevents accidental spam
+- Protects your Gmail reputation
+- Avoids Google account suspension
+- Ensures thoughtful communication
 
-## Configuration
+### Default Limits
+- **10 emails/hour**: Allows focused communication
+- **50 emails/day**: Reasonable daily volume
+- **30s cooldown**: Time to review between sends
 
-### Environment Variables
-```env
-GMAIL_CREDENTIALS=/path/to/credentials.json
-GMAIL_TOKEN=/path/to/token.json
-DRY_RUN=false
-MAX_EMAILS_PER_HOUR=10
-MAX_EMAILS_PER_DAY=50
-SEND_COOLDOWN_SECONDS=30
-```
+### Adjusting Limits
 
-### MCP Server Options
+For higher volumes, increase limits cautiously:
+
 ```bash
-python email_mcp_server.py \
-  --credentials /path/to/creds.json \
-  --max-per-hour 10 \
-  --max-per-day 50 \
-  --cooldown 30 \
-  --dry-run
+python skills/email_mcp_server.py \
+  --credentials ./credentials/gmail_credentials.json \
+  --max-per-hour 20 \
+  --max-per-day 100 \
+  --cooldown 15
 ```
 
-## Logging
+**Warning**: Gmail may flag unusually high sending activity.
 
-All email operations logged to:
-- `/Vault/Logs/email_operations.json`
+## Audit Logs
+
+All email operations are logged to:
+```
+AI_Employee_Vault/Logs/email_operations.json
+```
 
 Log format:
 ```json
 {
-  "timestamp": "2026-04-06T10:30:00Z",
+  "timestamp": "2026-04-06T10:30:00",
   "action": "send_email",
   "to": "client@example.com",
-  "subject": "Invoice #1234",
-  "result": "success",
-  "message_id": "msg_abc123",
-  "approval_status": "approved",
-  "approved_by": "human"
+  "subject": "Project Update",
+  "message_id": "msg_123abc",
+  "result": "success"
 }
 ```
 
 ## Troubleshooting
 
-### Authentication Errors
+### "Invalid email address"
+- Check email format (e.g., user@domain.com)
+- Ensure no extra spaces or characters
+
+### "Rate limit exceeded"
+- Wait for cooldown period (30s)
+- Check hourly/daily limits
+- Reduce sending frequency
+
+### "Authentication error"
 - Delete token file and re-authenticate
 - Ensure Gmail API is enabled
-- Check credentials file path
+- Check credentials file
 
-### Rate Limiting
-- Check `email_operations.json` for send history
-- Increase limits if needed
-- Implement proper cooldown
+### "Gmail API error: Quota exceeded"
+- You've hit Google's API quota
+- Wait for quota to reset (typically daily)
+- Request quota increase in Google Cloud Console
 
-### Email Not Sending
-- Check if in dry run mode
-- Verify recipient not blocked
-- Review error logs
+### Emails not being received
+- Check recipient spam folder
+- Verify email address is correct
+- Check Gmail sending limits
 
 ## Best Practices
 
-1. **Always Use Approval for New Recipients**: Never auto-send to unknown addresses
-2. **Log Everything**: Maintain complete audit trail
-3. **Test with Dry Run First**: Verify emails before actual sending
-4. **Monitor Rate Limits**: Track sends to avoid hitting limits
-5. **Use Templates**: Consistent email formatting
-6. **Review Before Sending**: Even approved emails should be spot-checked
+### Email Content
+- Keep emails professional and concise
+- Include clear subject lines
+- Use proper formatting
+- Add signatures if needed
 
-## Next Steps (Gold Tier Enhancements)
+### Sending Practices
+- Review all emails before sending
+- Use drafts for important messages
+- Respect rate limits
+- Monitor audit logs
 
-- Email threading and reply management
-- Template library with variable substitution
-- Scheduled email sending
-- Email response tracking
-- Multi-account support (personal + business)
-- HTML email templates
-- Unsubscribe management
+### Compliance
+- Follow email marketing regulations
+- Honor unsubscribe requests
+- Maintain professional standards
+- Keep records of business communications
+
+## Integration Points
+
+### Gmail Watcher
+- Gmail Watcher **reads** incoming emails
+- Email MCP Server **sends** replies
+- Together they form a complete email workflow
+
+### Orchestrator
+- Orchestrator triggers Email MCP Server
+- Monitors approval folders
+- Logs all actions
+
+### Qwen Code
+- Qwen Code drafts email content
+- Suggests appropriate responses
+- Creates approval files
+
+## Next Steps
+
+- Set up email templates for common responses
+- Integrate with calendar for scheduling
+- Add attachment support
+- Create email analytics dashboard

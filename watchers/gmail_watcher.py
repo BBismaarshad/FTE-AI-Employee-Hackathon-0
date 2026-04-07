@@ -2,22 +2,23 @@
 Gmail Watcher - Monitors Gmail for unread/important emails.
 
 This watcher:
-1. Authenticates using Google OAuth 2.0
+1. Authenticates using Google OAuth 2.0 with credentials.json
 2. Checks for unread messages periodically
 3. Creates action files in Needs_Action folder for each new email
 4. Tracks processed emails to avoid duplicates
 
 Usage:
-    python gmail_watcher.py --vault /path/to/vault --credentials /path/to/credentials.json
+    python watchers/gmail_watcher.py --vault ./AI_Employee_Vault
 
-Security Note:
-    NEVER commit credentials or token files to version control.
-    Add token.json and credentials files to .gitignore
+Credentials:
+    Place credentials.json in the project root directory.
+    Token file (token.json) will be auto-created in credentials/ folder.
 """
 
 import os
 import sys
 import time
+import json
 import logging
 import pickle
 from pathlib import Path
@@ -25,18 +26,22 @@ from datetime import datetime
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from base_watcher import BaseWatcher, setup_logging
 
 # Google API imports
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-import base64
-from email.message import Message
-from email.parser import BytesParser
+try:
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+except ImportError:
+    raise ImportError(
+        'Google API client not installed. Run:\n'
+        '  pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib'
+    )
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
@@ -45,15 +50,15 @@ SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 class GmailWatcher(BaseWatcher):
     """Watches Gmail for unread messages and creates action files."""
 
-    def __init__(self, vault_path: str, credentials_path: str = None, 
+    def __init__(self, vault_path: str, credentials_path: str = None,
                  token_path: str = None, check_interval: int = 120):
         super().__init__(vault_path, check_interval)
 
-        # Set default paths if not provided
+        # Set default paths
         if credentials_path is None:
-            credentials_path = str(Path(__file__).parent.parent / 'credentials' / 'gmail_credentials.json')
+            credentials_path = str(Path(__file__).parent.parent / 'credentials.json')
         if token_path is None:
-            token_path = str(Path(__file__).parent.parent / 'credentials' / 'gmail_token.json')
+            token_path = str(Path(__file__).parent.parent / 'credentials' / 'token.json')
 
         self.credentials_path = Path(credentials_path)
         self.token_path = Path(token_path)
@@ -117,10 +122,11 @@ class GmailWatcher(BaseWatcher):
                 if not self.credentials_path.exists():
                     raise FileNotFoundError(
                         f'Gmail credentials file not found at: {self.credentials_path}\n'
-                        'Please download OAuth 2.0 credentials from Google Cloud Console.'
+                        'Please ensure credentials.json exists in project root.'
                     )
 
                 self.logger.info('Opening browser for Gmail authorization...')
+                self.logger.info('Please complete the authorization flow in your browser.')
                 flow = InstalledAppFlow.from_client_secrets_file(
                     self.credentials_path, SCOPES)
                 creds = flow.run_local_server(port=0)
@@ -270,7 +276,7 @@ status: pending
 ---
 *Detected by Gmail Watcher at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}*
 """
-        action_path.write_text(content)
+        action_path.write_text(content, encoding='utf-8')
 
         # Mark as processed
         self.processed_ids.add(message['id'])

@@ -10,7 +10,7 @@ Responsibilities:
 6. Handle approval workflow
 
 Usage:
-    python orchestrator.py --vault /path/to/vault [--qwen-path /path/to/qwen]
+    python orchestrator.py --vault ./AI_Employee_Vault
 """
 
 import os
@@ -18,6 +18,7 @@ import sys
 import json
 import time
 import shutil
+import subprocess
 import argparse
 import logging
 from pathlib import Path
@@ -57,6 +58,59 @@ class Orchestrator:
 
         # Logger
         self.logger = logging.getLogger('Orchestrator')
+
+    def trigger_qwen_code(self, prompt: str, timeout: int = 300) -> dict:
+        """
+        Trigger Qwen Code to process a prompt.
+
+        Args:
+            prompt: The prompt to send to Qwen Code
+            timeout: Maximum time to wait for completion (seconds)
+
+        Returns:
+            dict: Result with success status and output
+        """
+        try:
+            self.logger.info(f'Triggering Qwen Code with prompt: {prompt[:100]}...')
+
+            # Create a temporary file with the prompt
+            prompt_file = self.vault_path / '.state' / 'qwen_prompt.txt'
+            prompt_file.parent.mkdir(parents=True, exist_ok=True)
+            prompt_file.write_text(prompt)
+
+            # Run Qwen Code with the prompt
+            result = subprocess.run(
+                [self.qwen_command, '--prompt', prompt],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=str(self.vault_path)
+            )
+
+            output = result.stdout if result.returncode == 0 else result.stderr
+
+            self.logger.info(f'Qwen Code completed with return code {result.returncode}')
+
+            return {
+                'success': result.returncode == 0,
+                'output': output,
+                'returncode': result.returncode
+            }
+
+        except subprocess.TimeoutExpired:
+            self.logger.error(f'Qwen Code timed out after {timeout}s')
+            return {
+                'success': False,
+                'error': 'Timeout',
+                'returncode': -1
+            }
+        except Exception as e:
+            self.logger.error(f'Error triggering Qwen Code: {e}')
+            return {
+                'success': False,
+                'error': str(e),
+                'returncode': -1
+            }
 
     def _load_state(self):
         """Load processed files state for restart persistence."""
