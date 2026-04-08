@@ -561,45 +561,76 @@ Move this file to /Rejected/LinkedIn/ folder or delete.
                 self.logger.debug('Post start button not found')
                 return False
 
-            # Wait for dialog to appear
-            time.sleep(3)
-            
+            # Wait for dialog to appear - LinkedIn needs more time
+            self.logger.info('Waiting for post dialog to open...')
+            time.sleep(5)  # Increased wait time for dialog animation
+
+            # Wait specifically for the dialog/modal to appear
+            dialog_appeared = False
+            for attempt in range(10):  # Wait up to 10 seconds
+                try:
+                    # Check for dialog/modal presence
+                    dialog = page.query_selector('div[role="dialog"], div.artdeco-modal')
+                    if dialog and dialog.is_visible():
+                        dialog_appeared = True
+                        self.logger.info('Post dialog opened')
+                        break
+                except Exception:
+                    pass
+                time.sleep(1)
+
+            if not dialog_appeared:
+                self.logger.warning('Dialog did not appear, but will try to proceed')
+
             # Take screenshot for debugging
             import os
             screenshot_path = os.path.join(os.getcwd(), 'linkedin_debug_dialog.png')
             page.screenshot(path=screenshot_path)
             self.logger.info(f'Took screenshot: {screenshot_path}')
-            
+
             # Try to find text editor using JavaScript for more reliable detection
             text_filled = self._fill_text_editor_js(page, text[:3000])
-            
+
             if not text_filled:
                 self.logger.debug('Text editor not found')
                 return False
 
-            # Click post button
+            # Click post button with better detection
+            post_button_clicked = False
             post_button_selectors = [
                 'button:has-text("Post")',
                 '[aria-label="Post"]',
                 '[data-testid="post-button"]',
                 '.artdeco-button--primary:has-text("Post")',
-                '.artdeco-button[aria-label="Post"]'
+                '.artdeco-button[aria-label="Post"]',
+                'button.artdeco-button--primary:has-text("Post")'
             ]
 
             for selector in post_button_selectors:
                 try:
                     post_buttons = page.query_selector_all(selector)
+                    self.logger.debug(f'Trying post button selector: {selector}, found {len(post_buttons)} elements')
                     for button in post_buttons:
-                        if button.is_visible() and 'disabled' not in button.evaluate('el => el.getAttributeNames()'):
-                            button.click()
-                            self.logger.info(f'Clicked post button with selector: {selector}')
-                            time.sleep(3)
-                            return True
+                        if button.is_visible():
+                            # Check if button is not disabled
+                            disabled = button.evaluate('el => el.disabled || el.getAttribute("aria-disabled") === "true"')
+                            if not disabled:
+                                button.click()
+                                self.logger.info(f'✅ Clicked post button with selector: {selector}')
+                                time.sleep(5)  # Wait for post to be published
+                                post_button_clicked = True
+                                break
+                    if post_button_clicked:
+                        break
                 except Exception as e:
                     self.logger.debug(f'Post button attempt ({selector}): {e}')
                     continue
 
-            return False
+            if not post_button_clicked:
+                self.logger.warning('Could not find enabled Post button')
+                return False
+
+            return True
 
         except Exception as e:
             self.logger.debug(f'Post via start box failed: {e}')
@@ -608,72 +639,180 @@ Move this file to /Rejected/LinkedIn/ folder or delete.
     def _fill_text_editor_js(self, page, text: str) -> bool:
         """Fill text editor using JavaScript injection for reliability."""
         try:
-            # Try multiple approaches to set text
-            approaches = [
-                # Approach 1: Find contenteditable and use nativeInputValueSetter
-                """
-                const editors = document.querySelectorAll('div[contenteditable="true"], div[role="textbox"]');
-                for (const editor of editors) {
-                    if (editor.offsetParent !== null) { // Check if visible
-                        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLDivElement.prototype, 'innerHTML').set;
-                        nativeInputValueSetter.call(editor, `{text}`);
-                        editor.dispatchEvent(new Event('input', { bubbles: true }));
-                        return true;
-                    }
-                }
-                return false;
-                """.replace('{text}', text.replace('\n', '\\n').replace('\'', '\\\'')),
-                
-                # Approach 2: Use eval with Playwright's fill
-                """
-                const editors = document.querySelectorAll('[contenteditable], [role="textbox"]');
-                for (const editor of editors) {
-                    const rect = editor.getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0) {
-                        editor.focus();
-                        document.execCommand('insertText', false, `{text}`);
-                        return true;
-                    }
-                }
-                return false;
-                """.replace('{text}', text.replace('\n', '\\n').replace('\'', '\\\''))
-            ]
+            self.logger.info('Attempting to fill LinkedIn text editor...')
             
-            for approach in approaches:
-                try:
-                    result = page.evaluate(approach)
-                    if result:
-                        self.logger.info('Successfully filled text editor using JS')
-                        time.sleep(1.5)
-                        return True
-                except Exception as e:
-                    self.logger.debug(f'JS approach failed: {e}')
-                    continue
-            
-            # Fallback: Try using keyboard to paste from clipboard
-            self.logger.info('Attempting clipboard paste approach...')
-            # Find and focus the text editor first
-            page.evaluate('''
-                const editors = document.querySelectorAll('div[contenteditable="true"], div[role="textbox"], [contenteditable]');
-                for (const editor of editors) {
-                    const rect = editor.getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0) {
-                        editor.focus();
-                        return true;
+            # First, let's log what dialogs/editors we can find for debugging
+            debug_info = page.evaluate('''
+                () => {
+                    const dialogs = document.querySelectorAll('div[role="dialog"], div.artdeco-modal');
+                    const info = { dialogCount: dialogs.length, editors: [] };
+                    
+                    for (const dialog of dialogs) {
+                        const editors = dialog.querySelectorAll('div[contenteditable="true"], div[role="textbox"], div[contenteditable]');
+                        for (const editor of editors) {
+                            const rect = editor.getBoundingClientRect();
+                            info.editors.push({
+                                visible: rect.width > 0 && rect.height > 0,
+                                width: rect.width,
+                                height: rect.height,
+                                hasContent: editor.innerHTML.length > 0
+                            });
+                        }
                     }
+                    return info;
                 }
-                return false;
             ''')
-            time.sleep(0.5)
-            # Paste from clipboard (Ctrl+V)
-            page.keyboard.down('Control')
-            page.keyboard.press('KeyV')
-            page.keyboard.up('Control')
-            time.sleep(2)
-            return True
+            self.logger.info(f'Debug: Found {debug_info.get("dialogCount", 0)} dialogs and {len(debug_info.get("editors", []))} editors')
             
+            # Approach 1: Find contenteditable div inside dialog and set innerHTML directly
+            self.logger.info('Trying approach 1: Direct innerHTML set with proper events')
+            try:
+                result = page.evaluate('''
+                    () => {
+                        const dialogs = document.querySelectorAll('div[role="dialog"], div.artdeco-modal');
+                        for (const dialog of dialogs) {
+                            const editors = dialog.querySelectorAll('div[contenteditable="true"], div[role="textbox"], div[contenteditable]');
+                            for (const editor of editors) {
+                                const rect = editor.getBoundingClientRect();
+                                if (rect.width > 0 && rect.height > 0) {
+                                    // Clear first
+                                    editor.innerHTML = '';
+                                    editor.focus();
+                                    
+                                    // Use InputEvent to notify LinkedIn of changes
+                                    const textContent = `{text}`;
+                                    
+                                    // Try using document.execCommand for better compatibility
+                                    document.execCommand('insertText', false, textContent);
+                                    
+                                    // Also dispatch events
+                                    editor.dispatchEvent(new Event('input', { bubbles: true }));
+                                    editor.dispatchEvent(new Event('change', { bubbles: true }));
+                                    
+                                    return true;
+                                }
+                            }
+                        }
+                        return false;
+                    }
+                '''.replace('{text}', text.replace('\n', '\\n').replace('`', '\\`').replace('\\', '\\\\')[:2000]))
+                
+                if result:
+                    self.logger.info('✅ Successfully filled editor using approach 1')
+                    time.sleep(3)
+                    # Verify text was entered
+                    verify = page.evaluate('''
+                        () => {
+                            const editors = document.querySelectorAll('div[contenteditable="true"], div[role="textbox"]');
+                            for (const editor of editors) {
+                                const rect = editor.getBoundingClientRect();
+                                if (rect.width > 0) {
+                                    return editor.innerText.length || editor.innerHTML.length;
+                                }
+                            }
+                            return 0;
+                        }
+                    ''')
+                    self.logger.info(f'Verified editor has {verify} characters')
+                    return True
+            except Exception as e:
+                self.logger.debug(f'Approach 1 failed: {e}')
+
+            # Approach 2: Use Playwright's fill method on found element
+            self.logger.info('Trying approach 2: Playwright fill method')
+            time.sleep(1)
+            try:
+                editors = page.query_selector_all('div[contenteditable="true"], div[role="textbox"]')
+                for editor in editors:
+                    try:
+                        rect = editor.bounding_box()
+                        if rect and rect['width'] > 0 and rect['height'] > 0:
+                            editor.click()
+                            time.sleep(1)
+                            editor.fill(text[:2000])
+                            self.logger.info('✅ Successfully filled editor using approach 2')
+                            time.sleep(2)
+                            return True
+                    except Exception as e:
+                        self.logger.debug(f'Editor fill attempt failed: {e}')
+                        continue
+            except Exception as e:
+                self.logger.debug(f'Approach 2 failed: {e}')
+
+            # Approach 3: Click editor and use keyboard typing
+            self.logger.info('Trying approach 3: Click and keyboard type')
+            time.sleep(1)
+            try:
+                editor_clicked = page.evaluate('''
+                    () => {
+                        const dialogs = document.querySelectorAll('div[role="dialog"], div.artdeco-modal');
+                        for (const dialog of dialogs) {
+                            const editors = dialog.querySelectorAll('div[contenteditable="true"], div[role="textbox"], div[contenteditable]');
+                            for (const editor of editors) {
+                                const rect = editor.getBoundingClientRect();
+                                if (rect.width > 0 && rect.height > 0) {
+                                    editor.click();
+                                    editor.focus();
+                                    return true;
+                                }
+                            }
+                        }
+                        return false;
+                    }
+                ''')
+                
+                if editor_clicked:
+                    time.sleep(1.5)
+                    # Type text using keyboard - slower but more reliable
+                    text_to_type = text[:500]  # Limit for keyboard typing
+                    self.logger.info(f'Typing {len(text_to_type)} characters via keyboard...')
+                    page.keyboard.type(text_to_type, delay=10)  # Slower typing speed
+                    time.sleep(2)
+                    return True
+            except Exception as e:
+                self.logger.debug(f'Approach 3 failed: {e}')
+
+            # Approach 4: Paste from clipboard as final fallback
+            self.logger.info('Trying approach 4: Clipboard paste')
+            time.sleep(1)
+            try:
+                # Focus the editor
+                page.evaluate('''
+                    () => {
+                        const dialogs = document.querySelectorAll('div[role="dialog"], div.artdeco-modal');
+                        for (const dialog of dialogs) {
+                            const editors = dialog.querySelectorAll('div[contenteditable="true"], div[role="textbox"], div[contenteditable]');
+                            for (const editor of editors) {
+                                const rect = editor.getBoundingClientRect();
+                                if (rect.width > 0 && rect.height > 0) {
+                                    editor.focus();
+                                    editor.click();
+                                    return true;
+                                }
+                            }
+                        }
+                        return false;
+                    }
+                ''')
+                time.sleep(1)
+                
+                # Paste from clipboard (Ctrl+A, Delete, Ctrl+V)
+                self.logger.info('Pasting from clipboard...')
+                page.keyboard.press('Control+A')
+                time.sleep(0.3)
+                page.keyboard.press('Delete')
+                time.sleep(0.3)
+                page.keyboard.press('Control+V')
+                time.sleep(2)
+                return True
+            except Exception as e:
+                self.logger.debug(f'Approach 4 failed: {e}')
+
+            self.logger.error('All text editor filling approaches failed')
+            return False
+
         except Exception as e:
-            self.logger.debug(f'JS text editor fill failed: {e}')
+            self.logger.debug(f'Text editor filling error: {e}')
             return False
 
     def _post_via_new_post_flow(self, page, text: str) -> bool:
