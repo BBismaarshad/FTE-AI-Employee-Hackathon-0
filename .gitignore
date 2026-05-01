@@ -68,3 +68,31 @@ drop_folder/*
 *.tmp
 *.bak
 *.cache
+
+# ========================================
+# Gold Tier - Additional Exclusions
+# ========================================
+
+# Facebook/Instagram session data
+.ai-employee/facebook-session/
+**/facebook-session/
+
+# Odoo Docker volumes and data
+docker/odoo/backups/*.sql
+docker/odoo/backups/*.dump
+docker/odoo/.env
+docker/odoo/extra-addons/*
+!docker/odoo/extra-addons/.gitkeep
+docker/odoo/config/*
+!docker/odoo/config/.gitkeep
+
+# Ralph Loop state
+AI_Employee_Vault/.ralph_state/
+.ralph_state/
+
+# CEO Briefings (optional - may want to keep)
+# AI_Employee_Vault/Briefings/*.md
+
+# Odoo credentials
+ODOO_PASSWORD
+odoo_credentials.json
