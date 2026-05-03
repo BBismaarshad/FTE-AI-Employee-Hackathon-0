@@ -1,0 +1,109 @@
+# Docker Compose for Odoo 19 Community Edition (Local-First)
+# Purpose: Self-hosted accounting and business management AI Employee integration
+# Usage: docker compose -f docker/odoo/docker-compose.yml up -d
+
+services:
+  # PostgreSQL Database for Odoo
+  odoo-db:
+    image: postgres:16-alpine
+    container_name: ai-employee-odoo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${ODOO_DB_NAME:-odoo}
+      POSTGRES_USER: ${ODOO_DB_USER:-odoo}
+      POSTGRES_PASSWORD: ${ODOO_DB_PASSWORD:-odoo_db_secret_2026}
+    volumes:
+      # Persist database data
+      - odoo-db-data:/var/lib/postgresql/data
+    ports: []  # No external port - only accessible via Docker network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ODOO_DB_USER:-odoo} -d ${ODOO_DB_NAME:-odoo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - odoo-network
+
+  # Odoo 19 Community Edition
+  odoo:
+    image: odoo:19.0
+    container_name: ai-employee-odoo
+    restart: unless-stopped
+    depends_on:
+      odoo-db:
+        condition: service_healthy
+    environment:
+      HOST: odoo-db
+      PORT: 5432
+      USER: ${ODOO_DB_USER:-odoo}
+      PASSWORD: ${ODOO_DB_PASSWORD:-odoo_db_secret_2026}
+    ports:
+      - "${ODOO_PORT:-8069}:8069"
+    volumes:
+      # Persist Odoo filestore (attachments, images, etc.)
+      - odoo-data:/var/lib/odoo
+      # Mount custom Odoo modules if any
+      - ./extra-addons:/mnt/extra-addons:ro
+      # Mount config directory
+      - ./config:/etc/odoo
+    command: >
+      odoo
+      --workers=2
+      --limit-time-real=120
+      --limit-memory-soft=1073741824
+    networks:
+      - odoo-network
+      - ai-employee-network
+
+  # Optional: Odoo JSON-RPC proxy for easier MCP integration
+  # This is a lightweight HTTP proxy that simplifies Odoo's JSON-RPC API
+  odoo-api-proxy:
+    image: python:3.13-slim
+    container_name: ai-employee-odoo-proxy
+    restart: unless-stopped
+    depends_on:
+      - odoo
+    working_dir: /app
+    volumes:
+      - ./proxy:/app:ro
+    ports:
+      - "${ODOO_PROXY_PORT:-8070}:8070"
+    command: >
+      sh -c "pip install requests flask && python /app/api_proxy.py 2>/dev/null || echo 'Proxy not started, no extra-addons found'"
+    networks:
+      - odoo-network
+      - ai-employee-network
+
+  # Optional: Database backup service
+  odoo-backup:
+    image: prodrigestivill/postgres-backup-local:16
+    container_name: ai-employee-odoo-backup
+    restart: unless-stopped
+    depends_on:
+      - odoo-db
+    environment:
+      POSTGRES_HOST: odoo-db
+      POSTGRES_DB: ${ODOO_DB_NAME:-odoo}
+      POSTGRES_USER: ${ODOO_DB_USER:-odoo}
+      POSTGRES_PASSWORD: ${ODOO_DB_PASSWORD:-odoo_db_secret_2026}
+      SCHEDULE: "@daily"  # Backup every day at midnight
+      BACKUP_KEEP_DAYS: 7  # Keep backups for 7 days
+    volumes:
+      - ./backups:/backups
+    networks:
+      - odoo-network
+
+volumes:
+  odoo-db-data:
+    name: ai-employee-odoo-db-data
+  odoo-data:
+    name: ai-employee-odoo-filestore
+
+networks:
+  odoo-network:
+    name: odoo-network
+    driver: bridge
+  ai-employee-network:
+    name: ai-employee-network
+    driver: bridge

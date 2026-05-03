@@ -52,5 +52,50 @@
     "success": true,
     "approval_file": "POST_2026-04-06_pending.md",
     "draft_file": "2026-04-06_thought_leadership.md"
+  },
+  {
+    "timestamp": "2026-04-15T11:26:35.398814",
+    "category": "service_announcement",
+    "hashtags": [],
+    "text_preview": "\ud83d\udce2 New Service Alert!\n\nIntroducing  - designed to help you save 20+ hours per week.\n\nWhy choose us?\n\u2705...",
+    "success": true,
+    "approval_file": "POST_2026-04-14_pending.md",
+    "draft_file": "2026-04-14_service_announcement.md"
+  },
+  {
+    "timestamp": "2026-04-15T18:40:31.835028",
+    "category": "service_announcement",
+    "hashtags": [],
+    "text_preview": "\ud83d\udce2 New Service Alert!\n\nIntroducing  - designed to help you save 20+ hours per week.\n\nWhy choose us?\n\u2705...",
+    "success": true,
+    "approval_file": "POST_2026-04-15_pending.md",
+    "draft_file": "2026-04-15_service_announcement.md"
+  },
+  {
+    "timestamp": "2026-04-15T21:05:21.549625",
+    "category": "success_story",
+    "hashtags": [],
+    "text_preview": "\ud83d\udcbc Success Story of the Week:\n\nClient Challenge: Manual processes consuming valuable time\n\nOur Soluti...",
+    "success": true,
+    "approval_file": "POST_2026-04-15_pending.md",
+    "draft_file": "2026-04-15_success_story.md"
+  },
+  {
+    "timestamp": "2026-04-15T21:10:53.303340",
+    "category": "thought_leadership",
+    "hashtags": [],
+    "text_preview": "\ud83e\udd14 Hot Take: Most businesses don't need more people - they need better automation.\n\nHere's why I beli...",
+    "success": true,
+    "approval_file": "POST_2026-04-15_pending.md",
+    "draft_file": "2026-04-15_thought_leadership.md"
+  },
+  {
+    "timestamp": "2026-04-15T21:16:26.922577",
+    "category": "thought_leadership",
+    "hashtags": [],
+    "text_preview": "\ud83e\udd14 Hot Take: Most businesses don't need more people - they need better automation.\n\nHere's why I beli...",
+    "success": true,
+    "approval_file": "POST_2026-04-15_pending.md",
+    "draft_file": "2026-04-15_thought_leadership.md"
   }
 ]
